@@ -1,0 +1,341 @@
+---
+title: "Final Project"
+output:
+  html_document: default
+  pdf_document: default
+date: "2025-11-18"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## R Markdown
+
+This is an R Markdown document. Markdown is a simple formatting syntax for authoring HTML, PDF, and MS Word documents. For more details on using R Markdown see <http://rmarkdown.rstudio.com>.
+
+When you click the **Knit** button a document will be generated that includes both content as well as the output of any embedded R code chunks within the document. You can embed an R code chunk like this:
+
+## Step 1: data loading
+```{r cars}
+#install.packages("readxl")
+library(readxl)
+library(tidyverse)
+library(dplyr)
+library(stringr)
+library(tidyr)
+library(ggplot2)
+library(tibble)
+library(knitr)
+
+
+getwd()
+setwd("/Users/xuzhiwei/Documents/203A/Final Project")
+
+data <- read_excel("PPMI_Curated_Data_Cut_Public_20251112.xlsx")
+
+
+```
+
+```{r pressure, echo=FALSE}
+dim(data)  
+str(data)
+```
+## Step 2: Data Cleaning & Filtering
+```{r}
+
+clean_data <- data %>%
+  # Keep only Baseline (BL) data
+  filter(EVENT_ID == "BL") %>%
+  
+  # 1 = PD, 2 = Healthy Control, 4 = Prodromal
+  filter(COHORT %in% c(1, 2, 4)) %>%
+  
+  # Create Labels
+  mutate(
+    Group = case_when(
+      COHORT == 1 ~ "PD",
+      COHORT == 2 ~ "Healthy Control",
+      COHORT == 4 ~ "Prodromal"
+    ),
+    # Set factor levels order: Healthy -> Prodromal -> PD
+    Group = factor(Group, levels = c("Healthy Control", "Prodromal", "PD"))
+  ) %>%
+  
+  # Select Variables
+  select(
+    PATNO,           # Patient ID
+    Group,           # Cohort Group
+    age,             # Age
+    SEX,             # Sex
+    
+    #  Early Risk Factors (Non-Motor) 
+    upsit,           # Smell (Lower = Worse)
+    rem,             # Sleep / RBD (Higher = Worse)
+    scopa,           # Autonomic (Higher = Worse)
+    
+    #  Clinical Symptoms 
+    updrs3_score,    # Motor Symptoms (Higher = Worse)
+    moca,            # Cognition (Lower = Worse)
+    
+    # Biomarkers & Genetics
+    subgroup,        # Genetic Subgroups
+    MIA_PUTAMEN_L    # Brain Dopamine (DaTscan Left Putamen)
+  )
+
+# 3. Check Data
+summary(clean_data %>% select(age, upsit, rem, updrs3_score, moca))
+```
+### Data Collection Flow Chart
+```{r}
+
+n_raw <- nrow(data) # Original number of rows
+n_baseline <- data %>% filter(EVENT_ID == "BL") %>% nrow()
+n_final <- clean_data %>% nrow()
+
+box_data <- tibble(
+  x = c(0.5, 0.5, 0.5),
+  y = c(0.9, 0.5, 0.1),
+  label = c(
+    paste0("Raw Data\n(N = ", n_raw, ")"),
+    paste0("Baseline Visits Only\n(Event_ID = 'BL')\n(N = ", n_baseline, ")"),
+    paste0("Final Analytical Cohort\n(Healthy, PD, Prodromal)\n(N = ", n_final, ")")
+  )
+)
+
+arrow_data <- tibble(
+  x = c(0.5, 0.5),
+  xend = c(0.5, 0.5),
+  y = c(0.8, 0.4),
+  yend = c(0.6, 0.2)
+)
+
+ggplot() +
+  # Draw Boxes
+  geom_rect(data = box_data, 
+            aes(xmin = x - 0.2, xmax = x + 0.2, ymin = y - 0.1, ymax = y + 0.1),
+            fill = "white", color = "black", size = 1) +
+  # Add Text 
+  geom_text(data = box_data, aes(x = x, y = y, label = label), size = 4) +
+  # Add Arrows
+  geom_segment(data = arrow_data, 
+               aes(x = x, y = y, xend = xend, yend = yend),
+               arrow = arrow(length = unit(0.3, "cm"), type = "closed"), 
+               size = 1) +
+  theme_void() +
+  ylim(0, 1) +
+  xlim(0, 1) +
+  labs(title = "Figure 1: Data Selection Flow Chart")
+```
+### Descriptive Statistics of Study Measurements
+
+```{r}
+
+table_data <- clean_data %>%
+  select(Group, 
+         `Age` = age, 
+         `Smell (UPSIT)` = upsit, 
+         `Sleep (RBD)` = rem, 
+         `Autonomic (SCOPA)` = scopa, 
+         `Motor (UPDRS III)` = updrs3_score, 
+         `Cognition (MoCA)` = moca,
+         `Dopamine (DaTscan)` = MIA_PUTAMEN_L) %>%
+  pivot_longer(cols = -Group, names_to = "Measurement", values_to = "Value")
+
+summary_table <- table_data %>%
+  group_by(Group, Measurement) %>%
+  summarise(
+    N = sum(!is.na(Value)),
+    Mean = round(mean(Value, na.rm = TRUE), 2),
+    SD = round(sd(Value, na.rm = TRUE), 2),
+    Median = round(median(Value, na.rm = TRUE), 2),
+    Min = round(min(Value, na.rm = TRUE), 2),
+    Max = round(max(Value, na.rm = TRUE), 2),
+    .groups = 'drop'
+  ) %>%
+
+  arrange(Group, Measurement)
+
+kable(summary_table, caption = "Table 1: Descriptive Statistics of Study Measurements")
+```
+
+## Step 3: Visualization 
+```{r}
+
+
+plot_data <- clean_data %>%
+  select(Group, upsit, rem, scopa, updrs3_score, moca) %>%
+  pivot_longer(
+    cols = -Group,
+    names_to = "Metric",
+    values_to = "Value"
+  )
+
+metric_labels <- c(
+  "upsit" = "Smell (UPSIT) - Lower is Worse",
+  "rem" = "Sleep (RBD Score) - Higher is Worse",
+  "scopa" = "Autonomic (SCOPA) - Higher is Worse",
+  "updrs3_score" = "Motor (UPDRS III) - Higher is Worse",
+  "moca" = "Cognition (MoCA) - Lower is Worse"
+)
+
+ggplot(plot_data, aes(x = Group, y = Value, fill = Group)) +
+  # Boxplot
+  geom_boxplot(alpha = 0.7, outlier.shape = NA) + 
+  # Jitter points for detail
+  geom_jitter(width = 0.1, alpha = 0.1, size = 0.05) +
+  
+  # Facet wrap to show 5 plots
+  facet_wrap(~Metric, scales = "free_y", labeller = as_labeller(metric_labels)) +
+  
+  theme_light() +
+  scale_fill_brewer(palette = "Set2") + 
+  theme(
+    axis.text.x = element_text(angle = 45, hjust = 1),
+    legend.position = "top"
+  ) +
+  labs(
+    title = "Comparison of Early PD Risk Factors",
+    subtitle = "Comparing Healthy Control vs. Prodromal vs. PD",
+    x = "", 
+    y = "Score",
+    fill = "Cohort"
+  )
+```
+```{r}
+
+
+# 1. Categorize Genetics
+pd_genetic_data <- clean_data %>%
+  filter(Group == "PD") %>%  # Select only PD patients
+  mutate(
+    Genetic_Status = case_when(
+      grepl("LRRK2", subgroup) ~ "LRRK2",
+      grepl("GBA", subgroup) ~ "GBA",
+      grepl("SNCA", subgroup) ~ "SNCA",
+      TRUE ~ "Sporadic" # Default to Sporadic if no mutation found
+    )
+  )
+
+# 2. Plot A: Genetics vs. Smell (UPSIT)
+p1 <- ggplot(pd_genetic_data, aes(x = Genetic_Status, y = upsit, fill = Genetic_Status)) +
+  geom_boxplot(alpha = 0.7, outlier.shape = NA) +
+  geom_jitter(width = 0.2, alpha = 0.3, size = 1) +
+  scale_fill_viridis_d() +
+  theme_light() +
+  labs(
+    title = "Effect of Genotype on Smell (PD Only)",
+    subtitle = "Note: LRRK2 patients often have better smell (higher scores)",
+    x = "Genetic Subtype",
+    y = "UPSIT Score (Smell)"
+  ) + theme(legend.position = "none")
+
+print(p1)
+
+# 3. Plot B: Genetics vs. Cognition (MoCA)
+p2 <- ggplot(pd_genetic_data, aes(x = Genetic_Status, y = moca, fill = Genetic_Status)) +
+  geom_boxplot(alpha = 0.7, outlier.shape = NA) +
+  geom_jitter(width = 0.2, alpha = 0.3, size = 1) +
+  scale_fill_viridis_d(option = "magma") +
+  theme_light() +
+  labs(
+    title = "Effect of Genotype on Cognition (PD Only)",
+    subtitle = "Note: GBA patients may have lower cognitive scores",
+    x = "Genetic Subtype",
+    y = "MoCA Score (Cognition)"
+  ) + theme(legend.position = "none")
+
+print(p2)
+```
+```{r}
+
+
+# 1. Correlation: Smell vs. Brain Dopamine
+cor_smell <- cor.test(clean_data$upsit, clean_data$MIA_PUTAMEN_L, use = "complete.obs")
+
+# Plot 1: Smell vs Dopamine
+p3 <- ggplot(clean_data, aes(x = upsit, y = MIA_PUTAMEN_L)) +
+  geom_point(aes(color = Group), alpha = 0.6, size = 1.5) +
+  geom_smooth(method = "lm", color = "black", se = TRUE) +
+  theme_light() +
+  scale_color_brewer(palette = "Set2") +
+  labs(
+    title = "Biological Evidence: Smell Loss vs. Brain Dopamine",
+    subtitle = paste("Correlation (r) =", round(cor_smell$estimate, 3), 
+                     "- Worse Smell (Left) correlates with Lower Dopamine (Bottom)"),
+    x = "UPSIT Score (Smell)",
+    y = "Putamen DaTscan (Dopamine Level)",
+    color = "Cohort"
+  )
+
+print(p3)
+
+# 2. Correlation: Motor Symptoms vs. Brain Dopamine
+cor_motor <- cor.test(clean_data$updrs3_score, clean_data$MIA_PUTAMEN_L, use = "complete.obs")
+
+# Plot 2: Motor vs Dopamine
+p4 <- ggplot(clean_data, aes(x = MIA_PUTAMEN_L, y = updrs3_score)) +
+  geom_point(aes(color = Group), alpha = 0.6) +
+  geom_smooth(method = "lm", color = "black") +
+  theme_light() +
+  scale_color_brewer(palette = "Set1") +
+  labs(
+    title = "Biological Evidence: Dopamine Loss vs. Motor Symptoms",
+    subtitle = paste("Correlation (r) =", round(cor_motor$estimate, 3), 
+                     "(Negative correlation: Lower Dopamine = Higher/Worse Motor Score)"),
+    x = "Putamen DaTscan (Dopamine Level)",
+    y = "MDS-UPDRS III Score (Motor Symptoms)",
+    color = "Cohort"
+  )
+
+print(p4)
+```
+
+```{r}
+
+reg_data <- clean_data %>%
+  drop_na(upsit, rem, scopa, MIA_PUTAMEN_L)
+
+logit_data <- reg_data %>%
+  filter(Group %in% c("PD", "Healthy Control")) %>%
+  mutate(
+    # Create Target Variable: 1 = PD (Disease), 0 = Healthy
+    is_PD = ifelse(Group == "PD", 1, 0)
+  )
+
+model_logit <- glm(is_PD ~ upsit + rem + scopa + age + SEX, 
+                   data = logit_data, 
+                   family = binomial)
+
+summary(model_logit) 
+
+exp(coef(model_logit))
+
+
+model_linear <- lm(MIA_PUTAMEN_L ~ upsit + rem + scopa + age, 
+                   data = reg_data)
+
+print("--- Brain Dopamine Prediction Model ---")
+summary(model_linear)
+
+
+library(broom)
+
+
+tidy_logit <- tidy(model_logit, exponentiate = TRUE, conf.int = TRUE) %>%
+  filter(term != "(Intercept)") # Remove Intercept
+
+
+ggplot(tidy_logit, aes(x = estimate, y = term, xmin = conf.low, xmax = conf.high)) +
+  geom_point(color = "red", size = 3) +
+  geom_errorbarh(height = 0.2) +
+  geom_vline(xintercept = 1, linetype = "dashed") + # 1 represents no effect
+  labs(
+    title = "PD Risk Factor Odds Ratios",
+    subtitle = "Left of 1 = Protective Factor, Right of 1 = Risk Factor",
+    x = "Odds Ratio",
+    y = "Risk Factor"
+  ) +
+  theme_minimal()
+```
+

@@ -1,0 +1,984 @@
+---
+title: "final_project_sol"
+format: html
+editor: visual
+---
+
+Display machine information:
+
+```{r}
+sessionInfo()
+```
+
+Display my machine memory.
+
+```{r}
+memuse::Sys.meminfo()
+```
+
+Load database libraries and the tidyverse frontend:
+
+```{r}
+library(bigrquery)
+library(dbplyr)
+library(DBI)
+library(gt)
+library(gtsummary)
+library(tidyverse)
+library(arrow)
+library(data.table)
+library(duckdb)
+library(memuse)
+library(pryr)
+library(R.utils)
+library(dplyr)
+library(tidymodels)
+library(ranger)
+library(GGally)
+library(xgboost)
+library(forcats)
+```
+
+```{r}
+# path to the service account token 
+satoken <- "biostat-203b-2026-winter-92fefbfab477.json"
+# BigQuery authentication using service account
+bq_auth(path = satoken)
+```
+
+```{r}
+# connect to the BigQuery database `biostat-203b-2025-mimiciv_3_1`
+con_bq <- dbConnect(
+    bigrquery::bigquery(),
+    project = "biostat-203b-2025-winter",
+    dataset = "mimiciv_3_1",
+    billing = "biostat-203b-2025-winter"
+)
+con_bq
+```
+
+List all tables in the `mimiciv_3_1` database.
+
+```{r}
+dbListTables(con_bq)
+```
+
+## corhort
+
+```{r}
+proc_tbl <- tbl(con_bq, "procedureevents") |>
+  select(subject_id, hadm_id, stay_id, itemid, value, starttime, endtime) |>
+  print()
+```
+
+```{r}
+patients_tbl <- tbl(con_bq, "patients") |>
+  select(subject_id, gender, anchor_age) |>
+  arrange(subject_id) 
+```
+
+```{r}
+cohort_proc <- proc_tbl |>
+  filter(itemid == 225792) |>
+  filter(!is.na(starttime), !is.na(endtime)) |>
+  inner_join(patients_tbl |> 
+  select(subject_id, anchor_age), by = "subject_id") |>
+  filter(anchor_age > 65)
+
+stay_map <- cohort_proc |>
+  group_by(stay_id) |>
+  summarise(
+    subject_id = min(subject_id), 
+    hadm_id = min(hadm_id), 
+    .groups = "drop"
+    )
+```
+
+divide group
+
+```{r}
+x1 <- cohort_proc |>
+  mutate(start_dt = starttime, end_dt = endtime) |>
+  filter(end_dt >= start_dt) |>
+  mutate(
+    run_end = sql("
+      MAX(end_dt) OVER (
+        PARTITION BY stay_id
+        ORDER BY start_dt, end_dt
+        ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW
+      )
+    ")
+  )
+
+x2 <- x1 |>
+  mutate(
+    prev_run_end = sql("
+      LAG(run_end) OVER (
+        PARTITION BY stay_id
+        ORDER BY start_dt, end_dt
+      )
+    ")
+  )
+
+x3 <- x2 |>
+  mutate(
+    grp_id = sql("
+      SUM(IF(prev_run_end IS NULL OR start_dt > prev_run_end, 1, 0))
+      OVER (PARTITION BY stay_id ORDER BY start_dt, end_dt)
+    ")
+  )
+```
+
+```{r}
+cut_hr <- 48
+
+cohort_tbl <- x3 |>
+  group_by(stay_id, grp_id) |>
+  summarise(
+    grp_start = min(start_dt),
+    grp_end   = max(end_dt),
+    .groups = "drop"
+  ) |>
+  mutate(grp_hr = sql("DATETIME_DIFF(grp_end, grp_start, SECOND)") / 3600.0) |>
+  group_by(stay_id) |>
+  summarise(
+    vent_start = min(grp_start),
+    vent_end   = max(grp_end),
+    vent_hr    = sum(grp_hr),
+    n_vent_segments = n(),
+    y_prolong  = sql(paste0("CAST(SUM(grp_hr) > ", cut_hr, " AS INT64)")),
+    .groups = "drop"
+  ) |>
+  left_join(stay_map, by = "stay_id")
+```
+
+```{r}
+cohort_tbl |>
+  summarise(
+    n = n(),
+    n_stay = n_distinct(stay_id),
+    n_subj = n_distinct(subject_id),
+    prop_prolong = avg(y_prolong)
+  ) |>
+  collect()
+```
+
+```{r}
+cohort_tbl |>
+  head(20) 
+```
+
+## feature
+
+### admissions
+
+```{r}
+admissions_tbl <- tbl(con_bq, "admissions") |>
+  select(
+    subject_id, 
+    hadm_id, 
+    admission_type, 
+    admission_location, 
+    race, 
+    hospital_expire_flag
+    ) |>
+  arrange(subject_id, hadm_id) |>
+  print(width=inf)
+```
+
+### icustays
+
+```{r}
+icustays_tbl   <- tbl(con_bq, "icustays") |>
+  arrange(subject_id, stay_id) 
+```
+
+### omr
+
+```{r}
+omr_raw <- tbl(con_bq, "omr") |>
+  arrange(subject_id) 
+```
+
+```{r}
+# helper: base OMR with stay anchor
+omr_base <- cohort_tbl |>
+  select(stay_id, subject_id, vent_start = vent_start) |>
+  inner_join(
+    omr_raw |>
+      filter(result_name %in% c("BMI (kg/m2)", "Blood Pressure")),
+    by = "subject_id"
+  ) |>
+  mutate(
+    # distance in seconds (DATETIME vs DATE)
+    diff_sec = sql("ABS(DATETIME_DIFF(DATETIME(chartdate), DATETIME(vent_start), SECOND))")
+  )
+
+# 1) BMI nearest per stay
+omr_bmi_near <- omr_base |>
+  filter(result_name == "BMI (kg/m2)") |>
+  mutate(
+    rn = sql("
+      ROW_NUMBER() OVER(
+        PARTITION BY stay_id
+        ORDER BY diff_sec ASC, chartdate DESC, seq_num DESC
+      )
+    ")
+  ) |>
+  filter(rn == 1) |>
+  transmute(
+    stay_id,
+    bmi = sql("SAFE_CAST(result_value AS FLOAT64)")
+  )
+
+# 2) BP nearest per stay
+omr_bp_near <- omr_base |>
+  filter(result_name == "Blood Pressure") |>
+  mutate(
+    rn = sql("
+      ROW_NUMBER() OVER(
+        PARTITION BY stay_id
+        ORDER BY diff_sec ASC, chartdate DESC, seq_num DESC
+      )
+    ")
+  ) |>
+  filter(rn == 1) |>
+  transmute(
+    stay_id,
+    sbp = sql("SAFE_CAST(SPLIT(result_value,'/')[OFFSET(0)] AS FLOAT64)"),
+    dbp = sql("SAFE_CAST(SPLIT(result_value,'/')[OFFSET(1)] AS FLOAT64)")
+  )
+
+# 3) final OMR stay-level features (1 row per stay_id)
+omr_tbl <- cohort_tbl |>
+  select(stay_id) |>
+  left_join(omr_bmi_near, by = "stay_id") |>
+  left_join(omr_bp_near,  by = "stay_id")
+```
+
+```{r}
+omr_tbl |>
+  summarise(
+    n = n(),
+    miss_bmi = sql("AVG(IF(bmi IS NULL, 1, 0))"),
+    miss_sbp = sql("AVG(IF(sbp IS NULL, 1, 0))"),
+    miss_dbp = sql("AVG(IF(dbp IS NULL, 1, 0))")
+  ) |>
+  collect()
+```
+
+### labevents
+
+```{bash}
+zcat < ~/mimic/hosp/d_labitems.csv.gz | grep -i calculated
+```
+
+```{bash}
+zcat < ~/mimic/hosp/labevents.csv.gz \
+| awk -F, 'NR==1 || $5==50801' \
+| head -20
+```
+
+```{r}
+d_labitems_tbl <- tbl(con_bq, "d_labitems") |>
+  select(itemid, label, fluid, category) 
+```
+
+```{r}
+lab_items <- c(
+   51006, 50912, 50971, 50983, 50802, 50818, 50821
+  )
+```
+
+```{r}
+lookback_hours <- 72
+
+# --- 1) build itemid -> column-name map (small, safe to collect) ---
+lab_map <- d_labitems_tbl |>
+  filter(itemid %in% lab_items) |>
+  select(itemid, label) |>
+  collect() |>
+  mutate(
+    # clean labels into valid column names
+    col = label |>
+      str_to_lower() |>
+      str_replace_all("[^a-z0-9]+", "_") |>
+      str_replace_all("^_|_$", "")
+  )
+
+# ensure uniqueness if labels collide
+lab_map$col <- make.unique(lab_map$col, sep = "_")
+
+# keep the order matching lab_items (optional)
+lab_map <- lab_map |>
+  mutate(ord = match(itemid, lab_items)) |>
+  arrange(ord)
+
+# --- 2) build dynamic summarise() expressions for pivoting ---
+pivot_exprs <- set_names(
+  lapply(lab_map$itemid, 
+    function(id) sql(sprintf("MAX(IF(itemid=%d, valuenum, NULL))", id))),
+  lab_map$col
+)
+
+# --- 3) main query: last pre-vent lab within lookback window, then wide ---
+labevents_tbl <- tbl(con_bq, "labevents") |>
+  filter(itemid %in% lab_items) |>
+  filter(!is.na(valuenum), !is.na(charttime)) |>
+  inner_join(
+    cohort_tbl |> select(subject_id, hadm_id, stay_id, vent_start),
+    by = c("subject_id", "hadm_id")
+  ) |>
+  # window: [vent_start - lookback_hours, vent_start]
+  filter(sql("DATETIME(charttime)") <= vent_start) |>
+  filter(sql(paste0(
+    "DATETIME(charttime) >= DATETIME_SUB(vent_start, INTERVAL ",
+    lookback_hours, " HOUR)"))) |>
+  # last charttime per stay_id x itemid
+  group_by(stay_id, itemid) |>
+  mutate(last_t = max(charttime)) |>
+  ungroup() |>
+  filter(charttime == last_t) |>
+  # average ties at the last time
+  group_by(stay_id, itemid) |>
+  summarise(valuenum = avg(valuenum), .groups = "drop") |>
+  # pivot to wide using auto-generated column names
+  group_by(stay_id) |>
+  summarise(!!!pivot_exprs, .groups = "drop")
+```
+
+```{r}
+labevents_tbl |>
+  print()
+```
+
+### chartevents
+
+```{r}
+d_items_tbl <- tbl(con_bq, "d_items")
+```
+
+```{r}
+chart_items <- c(
+    220045,   # heart rate
+    220179,   # systolic_bp
+    220180,   # diastolic_bp
+    223761,   # temperature_c
+    220210,   # respiratory_rate
+    220228    # hemoglobin 
+  ) 
+
+chartevents_tbl <- tbl(con_bq, "chartevents") |>
+  # 1) restrict to cohort stays + bring in anchor time (starttime)
+  inner_join(
+    cohort_tbl |>
+      select(stay_id, vent_start), by = "stay_id") |>
+  filter(itemid %in% chart_items) |>
+  filter(!is.na(storetime), !is.na(valuenum)) |>
+  filter(sql("DATETIME(storetime)") <= 
+      sql("DATETIME_ADD(vent_start, INTERVAL 6 HOUR)")) |>
+  
+  group_by(stay_id, itemid) |>
+  mutate(last_storetime = max(storetime)) |>
+  ungroup() |>
+  filter(storetime == last_storetime) |>
+  
+  # 5) average ties at first storetime
+  group_by(stay_id, itemid) |>
+  summarise(
+    valuenum = avg(valuenum), 
+    .groups = "drop"
+  ) |>
+  # 6) pivot to wide columns (one row per stay_id)
+  group_by(stay_id) |>
+  summarise(
+    heart_rate       = sql("MAX(IF(itemid=220045, valuenum, NULL))"),
+    systolic_bp      = sql("MAX(IF(itemid=220179, valuenum, NULL))"),
+    diastolic_bp     = sql("MAX(IF(itemid=220180, valuenum, NULL))"),
+    temperature_c    = sql("MAX(IF(itemid=223761, valuenum, NULL))"),
+    respiratory_rate = sql("MAX(IF(itemid=220210, valuenum, NULL))"),
+    hemoglobin       = sql("MAX(IF(itemid=220228, valuenum, NULL))"),
+    .groups = "drop"
+  )
+```
+
+```{r}
+chartevents_tbl |>
+  print(width=inf)
+```
+
+## putting things together
+
+```{r}
+model_tbl <- cohort_tbl |>
+  left_join(admissions_tbl, by = c("subject_id","hadm_id")) |>
+  left_join(patients_tbl,   by = "subject_id") |>
+  left_join(icustays_tbl |> select(stay_id, first_careunit, last_careunit),
+            by = "stay_id") |>
+  left_join(omr_tbl,   by = "stay_id") |>
+  left_join(labevents_tbl,  by = "stay_id") |>
+  left_join(chartevents_tbl,by = "stay_id") |>
+  arrange(subject_id) |>
+  collect() |>
+  glimpse() 
+```
+
+```{r}
+
+model_tbl_pre <- model_tbl |>
+  mutate(
+    first_careunit      = fct_lump_n(factor(first_careunit),
+      n = 4, other_level = "Other"),
+    last_careunit       = fct_lump_n(factor(last_careunit),
+      n = 4, other_level = "Other"),
+    admission_type      = fct_lump_n(factor(admission_type),
+      n = 4, other_level = "Other"),
+    admission_location  = fct_lump_n(factor(admission_location),
+      n = 3, other_level = "Other"),
+    race = fct_collapse(
+      factor(race),
+      ASIAN = c(
+        "ASIAN",
+        "ASIAN - ASIAN INDIAN",
+        "ASIAN - CHINESE",
+        "ASIAN - KOREAN",
+        "ASIAN - SOUTH EAST ASIAN"
+      ),
+      BLACK = c(
+        "BLACK/AFRICAN",
+        "BLACK/AFRICAN AMERICAN",
+        "BLACK/CAPE VERDEAN",
+        "BLACK/CARIBBEAN ISLAND"
+      ),
+      HISPANIC = c(
+        "HISPANIC OR LATINO",
+        "HISPANIC/LATINO - CENTRAL AMERICAN",
+        "HISPANIC/LATINO - COLUMBIAN",
+        "HISPANIC/LATINO - CUBAN",
+        "HISPANIC/LATINO - DOMINICAN",
+        "HISPANIC/LATINO - GUATEMALAN",
+        "HISPANIC/LATINO - HONDURAN",
+        "HISPANIC/LATINO - MEXICAN",
+        "HISPANIC/LATINO - PUERTO RICAN",
+        "HISPANIC/LATINO - SALVADORAN"
+      ),
+      WHITE = c(
+        "WHITE",
+        "WHITE - BRAZILIAN",
+        "WHITE - EASTERN EUROPEAN",
+        "WHITE - OTHER EUROPEAN",
+        "WHITE - RUSSIAN"
+      ),
+      Other = c(
+        "AMERICAN INDIAN/ALASKA NATIVE",
+        "MULTIPLE RACE/ETHNICITY",
+        "NATIVE HAWAIIAN OR OTHER PACIFIC ISLANDER",
+        "SOUTH AMERICAN",
+        "PORTUGUESE",
+        "OTHER",
+        "PATIENT DECLINED TO ANSWER",
+        "UNKNOWN",
+        "UNABLE TO OBTAIN"
+      )
+    )
+  )
+
+
+tbl1 <- model_tbl_pre |>
+  select(
+    y_prolong,
+    anchor_age, gender, race,
+    first_careunit, last_careunit,
+    admission_type, admission_location,
+    urea_nitrogen, creatinine, potassium,
+    sodium, pco2, po2, base_excess,
+    heart_rate, systolic_bp, diastolic_bp, 
+    temperature_c, respiratory_rate, hemoglobin
+  ) |>
+  mutate(
+    y_prolong = factor(y_prolong, levels = c(0, 1), labels = c("<= 2 days", "> 2 days"))
+  ) |>
+  tbl_summary(
+    by = y_prolong,
+    statistic = list(
+      all_continuous() ~ "{median} ({p25}, {p75})",
+      all_categorical() ~ "{n} ({p}%)"
+    ),
+    digits = all_continuous() ~ 2,
+    missing = "no"
+  ) |>
+  add_p(test = list(
+    all_continuous() ~ "wilcox.test",
+    all_categorical() ~ "chisq.test"
+  )) |>
+  add_overall() |>
+  bold_labels()
+
+tbl1
+
+tbl1_gt <- tbl1 |>
+  as_gt()
+
+gtsave(tbl1_gt, "mimic_vent_cohort_summary.html")
+```
+
+```{r}
+check_keys <- function(x, name){
+  x |>
+    summarise(
+      n = n(),
+      n_subj = n_distinct(subject_id),
+      n_hadm = n_distinct(hadm_id),
+      n_stay = n_distinct(stay_id)
+    ) |>
+    collect() |>
+    mutate(step = name)
+}
+
+check_keys(cohort_proc, "cohort_proc")      
+check_keys(cohort_tbl, "cohort_tbl")
+check_keys(model_tbl,   "after all joins")
+
+```
+
+```{r}
+miss_tbl <- model_tbl |>
+  summarise(
+    n = n(),
+    miss_urea = mean(is.na(urea_nitrogen)),
+    miss_cr   = mean(is.na(creatinine)),
+    miss_k    = mean(is.na(potassium)),
+    miss_na   = mean(is.na(sodium)),
+    miss_hr   = mean(is.na(heart_rate)),
+    miss_sbp  = mean(is.na(systolic_bp)),
+    miss_dbp  = mean(is.na(diastolic_bp)),
+    miss_temp = mean(is.na(temperature_c)),
+    miss_rr   = mean(is.na(respiratory_rate)),
+    miss_bg   = mean(is.na(hemoglobin)),
+    miss_pco2 = mean(is.na(pco2)),
+    miss_po2  = mean(is.na(po2)),
+    miss_be   = mean(is.na(base_excess))
+  )
+
+miss_tbl
+
+```
+
+## Save the final tibble
+
+```{r}
+# make a directory mimiciv_shiny
+if (!dir.exists("finalproject_shiny")) {
+  dir.create("finalproject_shiny")
+}
+# save the final tibble
+model_tbl |>
+  write_rds("finalproject_shiny/final_project_cohort.rds", compress = "gz")
+```
+Close database connection and clear workspace.
+```{r}
+if (exists("con_bq")) {
+  dbDisconnect(con_bq)
+}
+rm(list = ls())
+```
+
+## model prep
+
+```{r}
+df <- model_tbl |>
+  mutate(y_prolong = factor(y_prolong, levels = c(0, 1))) |>
+  select(-any_of(c(
+    "stay_id","subject_id","hadm_id",
+    "vent_start","vent_end","vent_start_min","vent_end_max",
+    "n_vent_events",
+    "omr_date","bp_raw",
+    "vent_hr","dur_hr","dur_sec"
+  ))) |>
+  mutate(across(where(is.character), ~ na_if(.x, ""))) |>
+  select(y_prolong, where(is.numeric), where(is.factor), where(is.character))
+
+# spilt
+set.seed(203)
+split_obj <- initial_split(df, prop = 0.5, strata = y_prolong) # 0.5 cuz large data
+train_df  <- training(split_obj)
+test_df   <- testing(split_obj)
+
+dim(train_df)
+dim(test_df)
+
+```
+
+## Logit modeling
+
+### Recipe: missing indicator + median impute
+
+```{r}
+logit_recipe <- recipe(y_prolong ~ ., data = train_df) |>
+  step_zv(all_predictors()) |>
+  step_string2factor(all_nominal_predictors()) |>
+  step_unknown(all_nominal_predictors(), new_level = "Unknown") |>
+  step_indicate_na(all_numeric_predictors()) |>
+  step_impute_median(all_numeric_predictors()) |>
+  step_dummy(all_nominal_predictors(), one_hot = TRUE) |>
+  print()
+```
+
+### Model + workflow
+
+```{r}
+logit_mod <- 
+  logistic_reg(
+    penalty = tune(), 
+    mixture = tune()
+  ) |>
+  set_engine("glmnet") |>
+  print()
+
+logit_wf <- workflow() |>
+  add_recipe(logit_recipe) |>
+  add_model(logit_mod) |>
+  print()
+
+```
+
+### Tuning grid
+
+```{r}
+logit_param_grid <- grid_regular(
+  penalty(range = c(-6, 3)), 
+  mixture(),
+  levels = c(100, 5)
+  ) |>
+  print()
+```
+
+### CV
+
+```{r}
+# Set cross-validation partitions.
+set.seed(203)
+
+logit_folds <- vfold_cv(train_df, v = 5, strata = y_prolong)
+logit_folds
+
+# Fit cross-validation.
+(logit_fit <- logit_wf |>
+  tune_grid(
+    resamples = logit_folds,
+    grid = logit_param_grid,
+    metrics = metric_set(roc_auc, accuracy)
+    )) |>
+  system.time()
+```
+
+```{r}
+logit_fit
+```
+
+### Visualize CV results
+
+```{r}
+logit_fit |>
+  # aggregate metrics from K folds
+  collect_metrics() |>
+  print(width = Inf) |>
+  filter(.metric == "roc_auc") |>
+  ggplot(mapping = aes(x = penalty, y = mean, color = factor(mixture))) +
+  geom_point() +
+  labs(x = "Penalty", y = "CV AUC") +
+  scale_x_log10()
+```
+
+### Show the top 5 models
+
+```{r}
+logit_fit |>
+  show_best(metric = "roc_auc")
+
+```
+
+### Select the best model.
+
+```{r}
+best_logit <- logit_fit |>
+  select_best(metric = "roc_auc")
+best_logit
+```
+
+### Logit Final workflow
+
+```{r}
+logit_final_wf <- logit_wf |>
+  finalize_workflow(best_logit)
+logit_final_wf
+```
+
+### Fit the whole training set, then predict the test cases
+
+```{r}
+logit_final_fit <- 
+  logit_final_wf |>
+  last_fit(split_obj)
+logit_final_fit
+```
+
+### Test metrics
+
+```{r}
+logit_final_fit |> 
+  collect_metrics()
+```
+
+## RF modeling
+
+### Recipe
+
+```{r}
+rf_recipe <- recipe(y_prolong ~ ., data = train_df) |>
+  step_zv(all_predictors()) |>
+  step_string2factor(all_nominal_predictors()) |>
+  step_unknown(all_nominal_predictors(), new_level = "Unknown") |>
+  step_indicate_na(all_numeric_predictors()) |>
+  step_impute_median(all_numeric_predictors()) |>
+  step_dummy(all_nominal_predictors(), one_hot = TRUE)
+```
+
+### model
+
+```{r}
+rf_mod <- 
+  rand_forest(
+    mode = "classification",
+    # Number of predictors randomly sampled in each split
+    mtry = tune(),
+    # Number of trees in ensemble
+    trees = tune()
+  ) |> 
+  set_engine("ranger")
+rf_mod
+```
+
+### Workflow
+
+```{r}
+rf_wf <- workflow() |>
+  add_recipe(rf_recipe) |>
+  add_model(rf_mod)
+rf_wf
+```
+
+### tuning grid
+
+```{r}
+rf_param_grid <- grid_regular(
+  trees(range = c(100L, 500L)), 
+  mtry(range = c(1L, 5L)),
+  levels = c(5, 5)
+  )
+rf_param_grid
+
+```
+
+### CV
+
+```{r}
+ # Set cross-validation partitions.
+set.seed(203)
+
+rf_folds <- vfold_cv(train_df, v = 5, strata = y_prolong)
+rf_folds
+
+rf_fit <- rf_wf |>
+  tune_grid(
+    resamples = rf_folds,
+    grid = rf_param_grid,
+    metrics = metric_set(roc_auc, accuracy)
+    )
+rf_fit
+```
+
+### Visualize CV results
+
+```{r}
+rf_fit |>
+  collect_metrics() |>
+  print(width = Inf) |>
+  filter(.metric == "roc_auc") |>
+  ggplot(mapping = aes(x = trees, y = mean, color = factor(mtry))) +
+  geom_point() + 
+  # geom_line() + 
+  labs(x = "Num. of Trees", y = "CV AUC")
+```
+
+### Show the top 5 models.
+
+```{r}
+rf_fit |>
+  show_best(metric = "roc_auc")
+```
+
+### select best model
+
+```{r}
+best_rf <- rf_fit |>
+  select_best(metric = "roc_auc")
+best_rf
+```
+
+### RF Final workflow
+
+```{r}
+rf_final_wf <- rf_wf |>
+  finalize_workflow(best_rf)
+rf_final_wf
+```
+
+### Fit the whole training set, then predict the test cases
+
+```{r}
+rf_final_fit <- 
+  rf_final_wf |>
+  last_fit(split_obj)
+rf_final_fit
+```
+
+### Test metrics
+
+```{r}
+rf_final_fit |> 
+  collect_metrics()
+```
+
+## XGBoost
+
+### Recipe
+
+```{r}
+gb_recipe <- recipe(y_prolong ~ ., data = train_df) |>
+  step_zv(all_predictors()) |>
+  step_string2factor(all_nominal_predictors()) |>
+  step_unknown(all_nominal_predictors(), new_level = "Unknown") |>
+  step_indicate_na(all_numeric_predictors()) |>
+  step_impute_median(all_numeric_predictors()) |>
+  step_dummy(all_nominal_predictors(), one_hot = TRUE)
+```
+
+### model
+
+```{r}
+gb_mod <- 
+  boost_tree(
+    mode = "classification",
+    trees = 1000, 
+    tree_depth = tune(),
+    learn_rate = tune()
+  ) |> 
+  set_engine("xgboost")
+gb_mod
+```
+
+### Workflow
+
+```{r}
+gb_wf <- workflow() |>
+  add_recipe(gb_recipe) |>
+  add_model(gb_mod)
+gb_wf
+```
+
+### tuning grid
+
+```{r}
+param_grid <- grid_regular(
+  tree_depth(range = c(1L, 3L)),
+  learn_rate(range = c(-5, 2), trans = log10_trans()),
+  levels = c(3, 10)
+  )
+param_grid
+```
+
+
+
+### CV
+
+```{r}
+set.seed(203)
+
+gb_folds <- vfold_cv(train_df, v = 5, strata = y_prolong)
+gb_folds
+
+gb_fit <- gb_wf |>
+  tune_grid(
+    resamples = gb_folds,
+    grid = param_grid,
+    metrics = metric_set(roc_auc, accuracy)
+    )
+gb_fit
+```
+
+### Visualize CV results
+
+```{r}
+gb_fit |>
+  collect_metrics() |>
+  print(width = Inf) |>
+  filter(.metric == "roc_auc") |>
+  ggplot(mapping = aes(x = learn_rate, y = mean, color = factor(tree_depth))) +
+  geom_point() +
+  labs(x = "Learning Rate", y = "CV AUC") +
+  scale_x_log10()
+```
+
+### Show the top 5 models.
+
+```{r}
+gb_fit |>
+  show_best(metric = "roc_auc")
+```
+
+### select best model
+
+```{r}
+best_gb <- gb_fit |>
+  select_best(metric = "roc_auc")
+best_gb
+```
+
+### XGBoost Final workflow
+
+```{r}
+gb_final_wf <- gb_wf |>
+  finalize_workflow(best_gb)
+gb_final_wf
+```
+
+### Fit the whole training set, then predict the test cases
+
+```{r}
+gb_final_fit <- 
+  gb_final_wf |>
+  last_fit(split_obj)
+gb_final_fit
+```
+
+### Test metrics
+
+```{r}
+gb_final_fit |> 
+  collect_metrics()
+```
+
+```{r}
+logit_fit_trained <- fit(logit_final_wf, data = train_df)
+rf_fit_trained    <- fit(rf_final_wf,    data = train_df)
+xgb_fit_trained   <- fit(gb_final_wf,    data = train_df)
+```
+
+
+# save the final tibble
+```{r}
+saveRDS(logit_fit_trained, "finalproject_shiny/wf_logit.rds")
+saveRDS(rf_fit_trained, "finalproject_shiny/wf_rf.rds")
+saveRDS(xgb_fit_trained, "finalproject_shiny/wf_xgb.rds")
+```

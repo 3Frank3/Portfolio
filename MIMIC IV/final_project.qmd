@@ -1,0 +1,288 @@
+---
+title: "Biostat 203B/212A Final Project: MIMIC-IV Machine Learning"
+subtitle: "End-to-end, reproducible ML pipeline in R"
+author: "ChihWei Hsu, UID: 706788612"
+format:
+  html:
+    theme: cosmo
+    embed-resources: true
+    number-sections: false
+    toc: true
+    toc-depth: 4
+    toc-location: left
+    code-fold: false
+---
+
+Display machine information:
+```{r}
+sessionInfo()
+```
+
+
+## 1. Title Page
+
+### Project title 
+Machine Learning on MIMIC-IV Data: Classifying ICU Patients by Duration of Invasive Mechanical Ventilation
+
+### Your name and UID
+Chihwei Hsu, UID: 706788612
+
+### Your team members
+Max Vo, Frank Hsu, Jolly Lin
+
+
+## 2. Abstract
+
+### Background
+Prolonged mechanical ventilation is clinically meaningful because it is strongly associated with increased ICU morbidity, including ventilator-associated complications/events, longer ICU length of stay, and higher mortality risk. Identifying patients at risk for prolonged ventilation can inform early clinical decision-making, resource allocation, and discussions with patients’ families regarding prognosis.
+    
+### Objectives
+Using the MIMIC-IV database, we developed and compared machine learning models to predict whether an ICU patient would have prolonged ventilation duration.
+    
+### Methods - Main approach and data sources
+We queried MIMIC-IV v3.1 via Google BigQuery and constructed a stay-level cohort of ICU stays with invasive ventilation events identified in procedureevents (itemid 225792). Because ventilation procedures were recorded as multiple time intervals per ICU stay that could overlap, we computed ventilation duration using a union-of-intervals approach to avoid double-counting. The index time was the start of ventilation (vent_start). Candidate predictors included demographics, admission/service variables, outpatient measurements (OMR) and ICU labs/vitals. For time alignment, we extracted the closest measurements prior to vent_start (e.g., last labs in a lookback window and nearest vital signs). We trained three algorithms using the tidymodels framework with 5-fold cross-validation and a held-out test set: elastic-net logistic regression (glmnet), random forest (ranger), and XGBoost. Missingness was handled using missingness indicators and median imputation within a reproducible recipe.
+
+### Results - Key findings
+In the held-out test set, random forest achieved ROC AUC ≈ 0.807, accuracy ≈ 0.744, and Brier score ≈ 0.168. Elastic-net logistic regression achieved ROC AUC ≈ 0.800, accuracy ≈ 0.737, and Brier score ≈ 0.167. The test prevalence of prolonged ventilation was ≈ 27%. XGBoost achieved ROC AUC ≈ 0.823, accuracy ≈ 0.744
+    
+### Conclusion - Implications and potential impact
+Both tree-based and regularized linear models provided good discrimination and comparable calibration for predicting prolonged ventilation at the time of ventilation initiation. This approach demonstrates how scalable EHR pipelines (BigQuery + dbplyr) can support reproducible ICU risk prediction, with potential utility for early clinical triage and care planning.
+
+## 3. Introduction
+
+### Background
+
+Mechanical ventilation is a core ICU therapy but carries risks including ventilator-associated complications and long-term functional decline. Prolonged ventilation is clinically important because it often correlates with severity of illness, resource burden, and downstream outcomes such as longer ICU length of stay and higher care complexity. Predicting which patients will require prolonged ventilation at the time ventilation begins can inform early planning 
+
+### Problem Statement
+
+In real-world ICU documentation, ventilation procedures may appear as multiple records per stay with overlaps and gaps. Naïvely summing durations can overestimate ventilation time and mislabel the outcome. Additionally, temporal alignment is critical: predictors must reflect information available before the prediction time to avoid leakage.
+    
+### Objectives
+
+- Construct a reproducible ICU cohort of ventilated patients from MIMIC-IV using BigQuery/dbplyr.
+
+- Define prolonged ventilation using a robust union-of-intervals duration computation.
+
+- Train and compare 3 ML algorithms to predict prolonged ventilation at ventilation initiation using pre-vent predictors.
+
+- Evaluate discrimination and calibration using cross-validation and a held-out test set.
+        
+### Project Aims/Hypotheses
+
+    * Aim
+    
+Predict prolonged ventilation (binary outcome) using structured EHR features available prior to ventilation start.
+
+    * Hypothesis
+
+Tree-based models (random forest/XGBoost) will capture nonlinear relationships and interactions and achieve slightly higher discrimination than a regularized linear baseline, while elastic-net logistic regression will provide competitive and more interpretable performance.
+        
+## 4. Methods
+
+### 4.1 Data Source or Materials
+
+    * Dataset(s) used: 
+
+We used the MIMIC-IV database to construct an end-to-end, reproducible machine learning pipeline in R. I accessed the data using Google BigQuery via dbplyr, enabling scalable querying and feature extraction.
+
+    * Index time:
+The index time is defined as the ventilation initiation time (starttime) for the invasive ventilation event. All predictive features are derived from information available prior to (or at) the index time to avoid information leakage.
+
+
+    * Inclusion/Exclusion Criteria
+
+- Included ICU stays with invasive ventilation procedure events in procedureevents (itemid 225792).
+
+- Restricted to elderly patients: anchor_age > 65.
+
+- Excluded ventilation intervals with missing start/end times or negative durations.
+
+
+    * Strategies for handling big data
+    
+All cohort creation and feature extraction were performed using dbplyr lazy queries executed in BigQuery to avoid local memory limits. Only finalized modeling tables were collected into R for model training.
+    
+    * privacy and appropriate use and MIMIC credentialing context
+    
+MIMIC-IV is a deidentified clinical dataset requiring credentialing and adherence to PhysioNet data use agreements. We used the dataset for educational research and avoided any attempts at reidentification.
+
+ 
+### 4.2 Variables / Features
+    
+    * Outcome
+
+- Index time: vent_start, the earliest ventilation start time within an ICU stay after merging overlapping intervals.
+
+- Outcome: y_prolong = 1 if total invasive ventilation duration (union-of-intervals) exceeds 48 hours; else 0.
+
+    * Key predictors
+
+- Demographics: age (anchor_age), sex (gender), and admission variables (e.g., race, admission type/location) 
+
+- ICU vitals: heart rate, systolic/diastolic BP, temperature, respiratory rate — extracted as the closest measurement prior to vent_start.
+
+- Labs: BUN/urea nitrogen, creatinine, sodium, potassium, and blood gas-related labs when available — extracted as the closest lab prior to vent_start within a lookback window 
+
+- OMR: BMI and blood pressure — extracted as the nearest measurements prior to vent_start, without requiring BMI and BP to occur on the same day.
+
+    * How they were processed or transformed
+
+- We aligned all time-varying predictors relative to vent_start to avoid post-index leakage.
+
+- We handled missingness using (i) missingness indicator variables and (ii) median imputation for numeric features inside a tidymodels recipe.
+        
+### 4.3 Analytical Approach / Modeling
+
+    * Index time, prediction window 
+
+- Prediction time = ventilation initiation (vent_start).
+
+- Predictors were taken from measurements at or before vent_start (and within a defined lookback window for labs).
+
+    * Ventilation duration definition (union-of-intervals)
+    
+Because a stay can contain multiple overlapping ventilation records, we:
+
+- Sorted intervals by start time,
+
+- Computed a running maximum end time,
+
+- Began a new “segment” only when an interval started after the previous merged end,
+
+- Summed merged segment durations to obtain total ventilation hours for the stay.
+
+This avoids double-counting overlapping documentation artifacts and yields a stable duration estimate.
+    
+    * Machine learning algorithms 
+    
+- Elastic-net logistic regression (glmnet)
+
+- Random forest (ranger)
+
+- XGBoost (gradient boosted trees)
+
+All models were trained using the tidymodels ecosystem (recipes/workflows/tune).
+        
+    * Software used
+    
+R packages included: tidymodels, recipes, parsnip, workflows, tune, yardstick, dbplyr, bigrquery, ranger, glmnet and xgboost.
+        
+### 4.4 Model Evaluation
+    
+    * Performance metrics
+
+- ROC AUC (discrimination)
+
+- PR AUC (useful for class imbalance)
+
+- Accuracy (threshold-based classification, default 0.5)
+
+- Brier score (probability calibration; lower is better)
+
+
+    * Validation methods
+
+- Train/test split with stratification on y_prolong
+
+- 5-fold cross-validation on the training set for hyperparameter tuning
+
+- Final evaluation on a held-out test set using last_fit() (single unbiased test estimate)
+        
+## 5. Results
+
+### 5.1 Cohort / Sample Characteristics
+
+    * Description of your data
+
+The final modeling cohort contained ~15,149 ICU stays (elderly ventilated patients) with a test-set prolonged ventilation prevalence of ~27%.
+
+```{=html}
+<iframe src="mimic_vent_cohort_summary.html" width="100%" height="600px"></iframe>
+```
+
+### 5.2 Model Performance
+    
+    * Summary of main results 
+        
+On the held-out test set:
+
+Random forest: ROC AUC ≈ 0.807, accuracy ≈ 0.744, Brier ≈ 0.168
+
+Elastic-net logistic regression: ROC AUC ≈ 0.800, accuracy ≈ 0.737, Brier ≈ 0.167
+
+XGBoost: ROC AUC ≈ 0.823, accuracy ≈ 0.744, Brier ≈ 0.158
+
+### 5.3 Additional Analyses
+    
+    * Feature importance (Shapley values), calibration
+    
+- Hyperparameter tuning interpretation:
+
+Elastic-net: performance decreased at large penalties (underfitting); ridge-like settings were more stable.
+
+Random forest: mtry influenced AUC more than number of trees; trees mainly improved stability.
+
+- Feature importance:
+For RF/XGBoost, report permutation importance or gain-based importance for top predictors.
+
+- Calibration:
+Report Brier scores and optionally a calibration plot (reliability curve).
+        
+## 6. Discussion
+    
+### 6.1 Summary of Findings
+
+We successfully built a reproducible pipeline for predicting prolonged ventilation using pre-vent EHR features. Both RF and elastic-net logistic regression achieved good discrimination (ROC AUC ~0.80) with similar calibration (Brier ~0.17). This suggests that both nonlinear and regularized linear approaches can be effective at the chosen prediction time (vent_start).
+        
+### 6.2 Comparison with Previous Work
+    
+We successfully built a reproducible pipeline for predicting prolonged ventilation using pre-vent EHR features. Both RF and elastic-net logistic regression achieved good discrimination (ROC AUC ~0.80) with similar calibration (Brier ~0.17). This suggests that both nonlinear and regularized linear approaches can be effective at the chosen prediction time (vent_start).
+
+### 6.3 Strengths and Limitations
+    
+    * Strengths
+
+- Reproducible BigQuery-based cohort and feature extraction.
+
+- Robust outcome definition using union-of-intervals to avoid double-counting overlaps.
+
+- Multiple models with consistent tuning and held-out test evaluation.
+
+
+    * Limitations
+
+- Missingness is substantial for certain measurements (e.g., ABG labs), and missingness may be informative and non-random.
+
+- Using a strict pre-vent_start window increases missingness for some features.
+
+- Outcome threshold (48h) is a modeling choice; performance may vary under other thresholds (e.g., 72h).
+        
+### 6.4 Implications
+
+A model that predicts prolonged ventilation at ventilation initiation could support early resource planning and clinical triage. The union-of-intervals method is particularly important for reliable label definition in EHR procedure data.
+    
+## 7. Conclusion
+
+We developed a scalable, reproducible machine learning pipeline on MIMIC-IV to predict prolonged invasive ventilation among elderly ICU patients at ventilation initiation. By carefully defining ventilation duration using union-of-intervals and aligning predictors to pre-vent information, we obtained stable test performance around ROC AUC ~0.80. Random forest slightly outperformed elastic-net logistic regression, though both models exhibited comparable calibration. Future work could refine time windows, incorporate richer comorbidity features, and evaluate generalization across hospitals.
+    
+## 8. References
+
+- Klompas, M., Branson, R., Eichenwald, E. C., Greene, L. R., Howell, M. D., Lee, G., Magill, S. S., Maragakis, L. L., Priebe, G. P., Speck, K., Yokoe, D. S., & Berenholtz, S. M. (2014). Strategies to prevent ventilator-associated pneumonia in acute care hospitals: 2014 update. Infection Control & Hospital Epidemiology, 35(8), 915–936. https://doi.org/10.1086/677144
+ 
+- Hill, A. D., Fowler, R. A., Burns, K. E. A., Rose, L., Pinto, R. L., & Scales, D. C. (2017). Long-term outcomes and health care utilization after prolonged mechanical ventilation. Annals of the American Thoracic Society, 14(3), 355–362. https://doi.org/10.1513/AnnalsATS.201610-792OC
+
+- Johnson, A., Bulgarelli, L., Pollard, T., Gow, B., Moody, B., Horng, S., Celi, L. A., & Mark, R. (2024). MIMIC-IV (version 3.1) [Data set]. PhysioNet. https://doi.org/10.13026/kpb9-mt58
+
+- Johnson, A. E. W., Bulgarelli, L., Shen, L., Gayles, A., Shammout, A., Horng, S., Pollard, T. J., Hao, S., Moody, B., Gow, B., Lehman, L.-W. H., Celi, L. A., & Mark, R. G. (2023). MIMIC-IV, a freely accessible electronic health record dataset. Scientific Data, 10(1), 1. https://doi.org/10.1038/s41597-022-01899-x
+
+- Kuhn, M., & Wickham, H. (2020). Tidymodels: A collection of packages for modeling and machine learning using tidyverse principles [R package]. https://www.tidymodels.org
+ 
+    
+## 9. AI usage acknowledgement
+
+I used AI assistance (ChatGPT) to: (i) brainstorm project structure and phrasing, (ii) debug BigQuery/dbplyr and tidymodels code patterns, and (iii) draft and edit report text. All modeling decisions, cohort definitions, and final results were verified by running code and reviewing outputs.
+
+
+
+
