@@ -1,163 +1,157 @@
-# Frank Hsu | Data Science, AI & Quant Research Portfolio
+# Frank Hsu | Data Science, AI & Quantitative Research Portfolio
 
-Hi, I’m Frank Hsu, a Data Science master’s student at UCLA with hands-on experience in machine learning, NLP/LLM workflows, time-series modeling, large-scale data processing, statistical modeling, and real-world data analytics.
+This repository is the **complete project catalog** behind my GitHub profile. It documents selected systems, research analyses, and applied data projects in greater depth.
 
-This portfolio highlights selected projects that demonstrate my ability to build end-to-end analytical pipelines, extract predictive signals from complex datasets, evaluate models rigorously, and translate data-driven insights into decision-support applications. While several projects are based on healthcare and clinical datasets, the core skills are highly transferable to quantitative research: feature engineering, noisy data processing, predictive modeling, model validation, calibration, causal reasoning, and systematic evaluation.
+For a 30-second overview, visit my [GitHub profile](https://github.com/3Frank3). For project scope, methods, evidence, and source repositories, use this page.
 
-## Portfolio Focus
+## Portfolio at a Glance
 
-My work is especially aligned with AI-driven quantitative research through the following capabilities:
+| Area | Representative work | Core capabilities |
+| --- | --- | --- |
+| Healthcare data science | Diabetes risk, ICU ventilation, Parkinson's screening, perinatal risk | Predictive modeling, calibration, fairness, causal inference, clinical data processing |
+| Finance & quantitative research | AI trading signals, stock prediction | Financial NLP, BERT, LSTM, time series, signal evaluation |
+| Applied analytics & monitoring | Institutional text analytics, SPC anomaly detection | Data standardization, NLP, process monitoring, stakeholder reporting |
+| Statistical learning | UCLA coursework and research analyses | Regression, model selection, validation, interpretation |
 
-- Building reproducible data pipelines from raw, noisy, and heterogeneous data sources.
-- Extracting structured signals from unstructured text, time-stamped events, and high-dimensional datasets.
-- Applying machine learning, NLP, and time-series models to prediction and decision-support problems.
-- Evaluating models with metrics beyond accuracy, including ROC-AUC, PR-AUC, Brier Score, calibration, and backtesting-style performance measures.
-- Maintaining careful train-test separation to prevent data leakage and improve the reliability of model evaluation.
+## Featured Systems
 
----
+### 1. Diabetes Risk Prediction, Fairness Evaluation & Causal Analysis
 
-## Featured Projects
+[Repository](https://github.com/3Frank3/Diabetes-Risk-Prediction-Fairness-Evaluation-and-Causal-Analysis-of-Physical-Activity-Using-PSM)
 
-| Project | Main Focus | Quant-Relevant Skills |
-|---|---|---|
-| [AI-Powered Quantitative Trading Signal Research System](#1-ai-powered-quantitative-trading-signal-research-system) | Financial NLP, alpha signals, LSTM strategy backtesting | Python, LLM, BERT, LSTM, sentiment signals, backtesting |
-| [Machine Learning on MIMIC-IV Data: ICU Ventilation Duration Analysis](#2-machine-learning-on-mimic-iv-data-icu-ventilation-duration-analysis) | Large-scale real-world data modeling | R, SQL, Linux, feature engineering, model validation |
-| [Diabetes Risk Prediction, Fairness Evaluation, and Causal Analysis](#3-diabetes-risk-prediction-fairness-evaluation-and-causal-analysis) | Healthcare ML, fairness, causal inference | Python, XGBoost, Logistic Regression, PSM, model evaluation |
-| [Unmasking Parkinson’s: Early Disease Risk Analysis](#4-unmasking-parkinsons-early-disease-risk-analysis) | Clinical risk signals and exploratory analysis | R, SQL, EDA, risk factor analysis, feature exploration |
-| [Maternal & Perinatal Risk Modeling for Survival Outcomes](#5-maternal--perinatal-risk-modeling-for-survival-outcomes) | Statistical risk modeling and outcome prediction | SAS, logistic regression, ROC analysis, stratified modeling |
+Built an end-to-end analysis of **253,680 CDC health records** spanning supervised learning, subgroup performance evaluation, and propensity score matching.
 
----
+- Compared logistic regression, random forest, and XGBoost; XGBoost reached **ROC-AUC 0.829**, **PR-AUC 0.428**, and **recall 0.772**
+- Evaluated performance across age, sex, education, and income groups
+- Improved observed covariate balance to **|SMD| < 0.1** for every checked variable after matching
+- Estimated a modest association between physical activity and lower diabetes odds while documenting observational-data limitations
 
-## 1. AI-Powered Quantitative Trading Signal Research System
+**Stack:** Python · pandas · scikit-learn · XGBoost · statsmodels · causal inference
 
-This project explores how AI, NLP, and time-series modeling can be used to extract trading signals from financial text and market data. The project focuses on building a pipeline that transforms unstructured financial information into sentiment-based alpha signals and evaluates their usefulness in a trading strategy context.
+### 2. Explainable Parkinson's Disease Screening App
 
-### Key Highlights
+[Repository](https://github.com/3Frank3/Explainable-Parkinson-s-Disease-Screening-App-Using-Hand-drawn-Spiral-and-Wave-Images)
 
-- Built an end-to-end Python and LLM-assisted analytics pipeline to explore, clean, and analyze earnings calls, tweets, financial news, and market data.
-- Fine-tuned BERT to extract sentiment-based alpha signals from unstructured financial text.
-- Integrated sentiment signals with market microstructure features and financial indicators for time-series modeling.
-- Backtested a Multivariate LSTM-based trading strategy to evaluate predictive signals and strategy performance.
-- Achieved a 0.74 Sharpe Ratio and 23.1% annualized return in the backtested strategy evaluation.
+Developed an educational application that classifies hand-drawn spiral and wave images and explains model attention with Grad-CAM.
 
-### Skills Demonstrated
+- Implemented baseline CNN and MobileNetV2 training workflows in PyTorch
+- Added model evaluation, checkpointing, and Grad-CAM visual explanations
+- Built a four-page Streamlit interface covering the dataset, performance, predictions, and responsible-use limitations
 
-`Python` · `NLP` · `LLM Workflow` · `BERT` · `LSTM` · `Time-Series Modeling` · `Alpha Signal Research` · `Backtesting` · `Financial Data Analysis`
+**Stack:** Python · PyTorch · CNN · MobileNetV2 · Grad-CAM · Streamlit
 
----
+### 3. MIMIC-IV ICU Ventilation Duration Analysis
 
-## 2. Machine Learning on MIMIC-IV Data: ICU Ventilation Duration Analysis
+[Repository](https://github.com/3Frank3/Machine-Learning-on-MIMIC-IV-Data-ICU-Ventilation-Duration-Analysis)
 
-This project uses large-scale MIMIC-IV ICU data to classify and predict invasive mechanical ventilation duration. Although the dataset is clinical, the project demonstrates skills that are directly transferable to quantitative research: large-scale data extraction, complex event processing, feature engineering, predictive modeling, and robust model validation.
+Transformed complex, time-stamped ICU data into a reproducible multiclass prediction workflow for invasive mechanical ventilation duration.
 
-### Key Highlights
+- Processed **500,000+ ICU data points** and engineered **30+ clinical variables**
+- Compared random forest and elastic-net multinomial logistic regression
+- Reached approximately **ROC-AUC 0.80** and **Brier score 0.17**
+- Used calibration, class-specific evaluation, and robustness checks alongside discrimination metrics
 
-- Built an end-to-end large-scale data pipeline using R, SQL, and Linux to process MIMIC-IV ICU records.
-- Integrated demographics, ICU stay records, procedure events, and time-stamped clinical events into modeling-ready datasets.
-- Defined a supervised learning target by calculating invasive mechanical ventilation duration from procedure timestamps.
-- Engineered structured features from complex real-world event data to support classification modeling.
-- Compared Random Forest and Elastic-Net Logistic Regression models using ROC-AUC, PR-AUC, Brier Score, and calibration metrics while maintaining train-test separation to prevent data leakage.
-- Achieved approximately ROC-AUC ≈ 0.80 and Brier Score ≈ 0.17.
+**Stack:** R · SQL · Linux · tidyverse · random forest · elastic net · ggplot2
 
-### Skills Demonstrated
+## Finance & Quantitative Research
 
-`R` · `SQL` · `Linux` · `Large-Scale Data Processing` · `Feature Engineering` · `Machine Learning` · `Model Calibration` · `Data Leakage Prevention`
+### 4. AI-Powered Quantitative Trading Signal Research System
 
----
+[Project folder](https://github.com/3Frank3/Portfolio/tree/main/Quant%20Trading%20Signal%20Research%20System)
 
-## 3. Diabetes Risk Prediction, Fairness Evaluation, and Causal Analysis
+A research prototype for turning unstructured financial text into structured sentiment signals for downstream quantitative analysis.
 
-This project analyzes diabetes risk using the CDC Diabetes Health Indicators dataset. It combines predictive modeling, subgroup fairness evaluation, and causal analysis to understand risk patterns and the association between physical activity and diabetes outcomes.
+- Prepared financial text for model training and inference
+- Fine-tuned BERT-based classifiers for sentiment-oriented signal extraction
+- Developed notebooks and reusable model assets for experimentation
+- Structured the NLP layer so signals can be joined with market and technical features for leakage-aware strategy research
 
-### Key Highlights
+**Stack:** Python · PyTorch · Transformers · BERT · financial NLP · sentiment analysis
 
-- Built machine learning models to predict diabetes risk using demographic, clinical, behavioral, and self-reported health indicators.
-- Compared Logistic Regression, Random Forest, and XGBoost models using ROC-AUC, PR-AUC, recall, precision, F1-score, and Brier Score.
-- Conducted subgroup evaluation across fairness-relevant variables such as age, sex, education, and income.
-- Applied Propensity Score Matching to estimate the association between physical activity and diabetes after balancing observed confounders.
-- Demonstrated the importance of evaluating predictive performance, subgroup disparities, and causal assumptions in real-world data analysis.
+### 5. Stock Market Analysis & Prediction System
 
-### Skills Demonstrated
+[Team repository](https://github.com/scfengv/GDSC-ai-stock) · [Project site](https://scfengv.github.io/GDSC-ai-stock/)
 
-`Python` · `Machine Learning` · `XGBoost` · `Logistic Regression` · `Random Forest` · `Fairness Evaluation` · `Propensity Score Matching` · `Causal Inference`
+Collaborated in a GDSC AI team to build a financial-data pipeline combining news, tweets, earnings calls, sentiment models, technical indicators, and LSTM forecasting.
 
----
+- Contributed to earnings-call summarization and BERT fine-tuning
+- Helped transform unstructured financial text into structured sentiment features
+- Integrated textual signals with time-series inputs in a reproducible modeling workflow
+- Reported project results: **MSE 9.73**, **IRR 12.83%**, and **win rate 62.38%**
 
-## 4. Unmasking Parkinson’s: Early Disease Risk Analysis
+**Stack:** Python · BART · Gemini · BERT · TensorFlow · LSTM · web crawling · time series
 
-This project investigates early disease risk signals using Parkinson’s-related clinical data. The analysis focuses on identifying patterns across non-motor symptoms, clinical indicators, and diagnostic groups.
+## Applied Analytics & Monitoring
 
-### Key Highlights
+### 6. NCKU Research Project Text Analytics
 
-- Processed and integrated clinical data to compare healthy, prodromal, and diagnosed populations.
-- Explored non-motor symptom indicators such as olfactory function, sleep behavior, autonomic symptoms, and related clinical measures.
-- Conducted exploratory data analysis to identify differences across disease-risk groups.
-- Built a structured workflow for data cleaning, missing value handling, and clinical feature analysis.
-- Strengthened experience in extracting meaningful signals from complex, noisy, and heterogeneous real-world datasets.
+[Repository](https://github.com/3Frank3/TextAnalysis_NCKU-RD-Foundation)
 
-### Skills Demonstrated
+Converted inconsistent institutional project records into a reusable analytical dataset and reporting taxonomy.
 
-`R` · `SQL` · `Clinical Data Analysis` · `Exploratory Data Analysis` · `Data Cleaning` · `Feature Exploration` · `Risk Signal Analysis`
+- Analyzed **4,610 projects from 2014–2024**
+- Segmented approximately **38,867 Chinese-language tokens** with CKIP Tagger
+- Organized terms into a **10-category** business taxonomy using rules and fuzzy similarity
+- Supported reporting and data governance for **10+ stakeholders**
 
----
+**Stack:** Python · pandas · CKIP Tagger · fuzzy matching · NLP · data visualization
 
-## 5. Maternal & Perinatal Risk Modeling for Survival Outcomes
+### 7. SPC & Machine-Learning Anomaly Detection
 
-This project analyzes maternal and perinatal factors associated with survival outcomes using large-scale U.S. multiple-birth records. The project applies statistical modeling to understand risk patterns across different pregnancy plurality groups.
+[Repository](https://github.com/3Frank3/spc-anomaly-project)
 
-### Key Highlights
+Built a reproducible monitoring pipeline that combines statistical process control with Isolation Forest anomaly detection.
 
-- Analyzed large-scale maternal and perinatal health records to study survival outcomes.
-- Cleaned and encoded demographic, maternal health, pregnancy, and delivery-related variables.
-- Built logistic regression models stratified by plurality groups, including twins, triplets, and higher-order pregnancies.
-- Evaluated model performance using ROC curves, AUC, pseudo-R², Hosmer-Lemeshow tests, odds ratios, and confidence intervals.
-- Interpreted key risk and protective factors, including maternal education, smoking, abnormal conditions, and delivery method.
+- Calculates I-MR control limits and common SPC signals
+- Compares rule-based process signals with model-based anomaly flags
+- Includes modular source code, automated outputs, and tests
+- Provides a foundation for operational-risk, quality-control, and sensor-monitoring use cases
 
-### Skills Demonstrated
+**Stack:** Python · statistical process control · Isolation Forest · pytest · Matplotlib
 
-`SAS` · `Logistic Regression` · `Statistical Modeling` · `Risk Modeling` · `ROC Analysis` · `Stratified Analysis` · `Model Interpretation`
+## Research Analyses
 
----
+### 8. Early Parkinson's Disease Risk Analysis
 
-## Technical Skills
+Analyzed healthy, prodromal, and diagnosed groups to identify patterns across non-motor symptoms and clinical indicators. The work emphasized missing-data handling, risk-factor exploration, interpretable comparisons, and responsible clinical interpretation.
 
-### Programming Languages
+**Stack:** R · SQL · exploratory data analysis · clinical feature analysis
 
-`Python` · `R` · `SQL` · `SAS`
+### 9. Maternal & Perinatal Risk Modeling
 
-### Machine Learning & Statistical Modeling
+Modeled survival outcomes in U.S. multiple-birth records using plurality-stratified logistic regression.
 
-`Logistic Regression` · `Elastic-Net Regression` · `Random Forest` · `XGBoost` · `LSTM` · `BERT` · `Propensity Score Matching` · `Model Calibration` · `ROC-AUC` · `PR-AUC` · `Brier Score`
+- Evaluated twins, triplets, and quadruplets with ROC-AUC values of approximately **0.67**, **0.73**, and **0.79**
+- Interpreted odds ratios, confidence intervals, and maternal or delivery-related risk factors
+- Used stratification and goodness-of-fit diagnostics to avoid relying on a single aggregate model
 
-### Quant & Financial Data Skills
+**Stack:** SAS · logistic regression · ROC analysis · stratified modeling
 
-`Alpha Signal Research` · `Financial NLP` · `Sentiment Analysis` · `Time-Series Modeling` · `Backtesting` · `Market Microstructure Features` · `Strategy Evaluation`
+### 10. Statistical Learning Coursework
 
-### Data Engineering & Analytics
+[Repository](https://github.com/3Frank3/BIOSTAT-212B-statistical-Learning)
 
-`Data Cleaning` · `Feature Engineering` · `Large-Scale Data Processing` · `Reproducible Pipelines` · `Real-World Data Integration` · `Exploratory Data Analysis`
+Supporting UCLA statistical-learning work covering the foundations behind the larger projects in this portfolio. This repository is presented as technical coursework rather than as a standalone production system.
 
-### Visualization & Reporting
+## Evaluation Principles
 
-`Jupyter Notebook` · `Quarto` · `ggplot2` · `Matplotlib` · `Seaborn` · `Tableau` · `Power BI` · `HTML Reports`
+Across projects, I prioritize:
 
----
+1. Reproducible data pipelines and explicit cohort or target definitions
+2. Train-test separation and leakage-aware feature engineering
+3. Metrics matched to the problem, including PR-AUC, calibration, Brier score, and subgroup results
+4. Interpretable outputs and clear limitations for high-stakes settings
+5. Translation from model results to operational or research decisions
 
-## Why This Portfolio Is Relevant to AI Quant Research
+## Technical Toolkit
 
-My projects demonstrate the core workflow required in AI-driven quantitative research:
-
-1. Collect and clean noisy real-world data.
-2. Convert raw text, time-stamped events, and structured variables into model-ready features.
-3. Build predictive models and compare performance across methods.
-4. Evaluate models carefully with robust metrics and leakage-aware validation.
-5. Translate model outputs into interpretable signals that can support downstream decision-making.
-
-I am particularly interested in applying machine learning, NLP/LLM workflows, and time-series modeling to alpha signal discovery, quantitative strategy validation, and data-driven investment research.
-
----
+**Languages:** Python · R · SQL · SAS  
+**Machine learning:** scikit-learn · XGBoost · PyTorch · TensorFlow · CNN · LSTM · BERT · elastic net  
+**Statistics & evaluation:** causal inference · propensity score matching · ROC-AUC · PR-AUC · calibration · Brier score · subgroup analysis  
+**Data & delivery:** pandas · tidyverse · Linux · Jupyter · Quarto · Streamlit · Tableau · Power BI · Git
 
 ## Contact
 
-- GitHub: [3Frank3](https://github.com/3Frank3)
-- Email: f20020303@gmail.com
+[GitHub Profile](https://github.com/3Frank3) · [LinkedIn](https://www.linkedin.com/in/chih-wei-hsu-4652041b6/) · [Email](mailto:f20020303@gmail.com)
+
+> Research and educational projects only. Healthcare outputs are not clinical advice, and financial outputs are not investment advice.
