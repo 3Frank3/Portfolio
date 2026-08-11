@@ -1,6 +1,6 @@
 # Frank Hsu | Data Science, AI & Quantitative Research Portfolio
 
-This repository is the **complete project catalog** behind my GitHub profile. It documents selected systems, research analyses, and applied data projects in greater depth.
+This repository is the **complete project catalog** behind my GitHub profile. It documents selected systems, research analyses, and applied data projects across **healthcare, finance, quantitative research, and decision systems**.
 
 For a 30-second overview, visit my [GitHub profile](https://github.com/3Frank3). For project scope, methods, evidence, and source repositories, use this page.
 
@@ -9,7 +9,7 @@ For a 30-second overview, visit my [GitHub profile](https://github.com/3Frank3).
 | Area | Representative work | Core capabilities |
 | --- | --- | --- |
 | Healthcare data science | Diabetes risk, ICU ventilation, Parkinson's screening, perinatal risk | Predictive modeling, calibration, fairness, causal inference, clinical data processing |
-| Finance & quantitative research | AI trading signals, stock prediction | Financial NLP, BERT, LSTM, time series, signal evaluation |
+| Finance & quantitative research | Stock prediction and AI-powered market signals | Financial NLP, BERT, LSTM, time series, signal evaluation |
 | Applied analytics & monitoring | Institutional text analytics, SPC anomaly detection | Data standardization, NLP, process monitoring, stakeholder reporting |
 | Statistical learning | UCLA coursework and research analyses | Regression, model selection, validation, interpretation |
 
@@ -55,35 +55,22 @@ Transformed complex, time-stamped ICU data into a reproducible multiclass predic
 
 ## Finance & Quantitative Research
 
-### 4. AI-Powered Quantitative Trading Signal Research System
+### 4. AI-Powered Stock Market Analysis & Quantitative Signal Research System
 
-[Project folder](https://github.com/3Frank3/Portfolio/tree/main/Quant%20Trading%20Signal%20Research%20System)
+[Team repository](https://github.com/scfengv/GDSC-ai-stock) · [Project site](https://scfengv.github.io/GDSC-ai-stock/) · [Supporting research materials](https://github.com/3Frank3/Portfolio/tree/main/Quant%20Trading%20Signal%20Research%20System)
 
-A research prototype for turning unstructured financial text into structured sentiment signals for downstream quantitative analysis.
+Collaborated in a GDSC AI team to build an end-to-end market research system combining financial text, sentiment signals, technical indicators, and LSTM-based stock prediction. The previously listed “AI-Powered Quantitative Trading Signal Research System” and “Stock Market Analysis & Prediction System” refer to this same project and are consolidated here.
 
-- Prepared financial text for model training and inference
-- Fine-tuned BERT-based classifiers for sentiment-oriented signal extraction
-- Developed notebooks and reusable model assets for experimentation
-- Structured the NLP layer so signals can be joined with market and technical features for leakage-aware strategy research
+- Contributed earnings-call summarization and BERT fine-tuning
+- Helped transform unstructured earnings-call text into structured sentiment features
+- Collaborated with teammates integrating news, tweets, earnings calls, VIX, technical indicators, and time-series inputs
+- Team-reported project results: **MSE 9.73**, **IRR 12.83%**, and **win rate 62.38%**
 
-**Stack:** Python · PyTorch · Transformers · BERT · financial NLP · sentiment analysis
-
-### 5. Stock Market Analysis & Prediction System
-
-[Team repository](https://github.com/scfengv/GDSC-ai-stock) · [Project site](https://scfengv.github.io/GDSC-ai-stock/)
-
-Collaborated in a GDSC AI team to build a financial-data pipeline combining news, tweets, earnings calls, sentiment models, technical indicators, and LSTM forecasting.
-
-- Contributed to earnings-call summarization and BERT fine-tuning
-- Helped transform unstructured financial text into structured sentiment features
-- Integrated textual signals with time-series inputs in a reproducible modeling workflow
-- Reported project results: **MSE 9.73**, **IRR 12.83%**, and **win rate 62.38%**
-
-**Stack:** Python · BART · Gemini · BERT · TensorFlow · LSTM · web crawling · time series
+**Stack:** Python · BART · Gemini · BERT · PyTorch · TensorFlow · LSTM · web crawling · financial NLP · time series
 
 ## Applied Analytics & Monitoring
 
-### 6. NCKU Research Project Text Analytics
+### 5. NCKU Research Project Text Analytics
 
 [Repository](https://github.com/3Frank3/TextAnalysis_NCKU-RD-Foundation)
 
@@ -96,7 +83,7 @@ Converted inconsistent institutional project records into a reusable analytical 
 
 **Stack:** Python · pandas · CKIP Tagger · fuzzy matching · NLP · data visualization
 
-### 7. SPC & Machine-Learning Anomaly Detection
+### 6. SPC & Machine-Learning Anomaly Detection
 
 [Repository](https://github.com/3Frank3/spc-anomaly-project)
 
@@ -111,13 +98,13 @@ Built a reproducible monitoring pipeline that combines statistical process contr
 
 ## Research Analyses
 
-### 8. Early Parkinson's Disease Risk Analysis
+### 7. Early Parkinson's Disease Risk Analysis
 
 Analyzed healthy, prodromal, and diagnosed groups to identify patterns across non-motor symptoms and clinical indicators. The work emphasized missing-data handling, risk-factor exploration, interpretable comparisons, and responsible clinical interpretation.
 
 **Stack:** R · SQL · exploratory data analysis · clinical feature analysis
 
-### 9. Maternal & Perinatal Risk Modeling
+### 8. Maternal & Perinatal Risk Modeling
 
 Modeled survival outcomes in U.S. multiple-birth records using plurality-stratified logistic regression.
 
@@ -127,7 +114,7 @@ Modeled survival outcomes in U.S. multiple-birth records using plurality-stratif
 
 **Stack:** SAS · logistic regression · ROC analysis · stratified modeling
 
-### 10. Statistical Learning Coursework
+### 9. Statistical Learning Coursework
 
 [Repository](https://github.com/3Frank3/BIOSTAT-212B-statistical-Learning)
 
